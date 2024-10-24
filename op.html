@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Object Detection with Distance Estimation</title>
+    <style>
+        body {
+            text-align: center;
+            font-family: Arial, sans-serif;
+        }
+        video {
+            border: 2px solid black;
+            width: 80%;
+            height: auto;
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 10%;
+        }
+    </style>
+</head>
+<body>
+    <h1>Real-Time Object Detection</h1>
+    <video id="webcam" autoplay playsinline muted></video>
+    <canvas id="overlay"></canvas>
+    <p id="feedback">Loading model...</p>
+
+    <!-- Language selection dropdown -->
+    <label for="language">Select Language:</label>
+    <select id="language">
+        <option value="en-US">English</option>
+        <option value="hi-IN">Hindi</option>
+        <option value="ta-IN">Tamil</option>
+        <option value="te-IN">Telugu</option>
+        <option value="bn-IN">Bengali</option>
+        <option value="ml-IN">Malayalam</option>
+        <option value="gu-IN">Gujarati</option>
+        <option value="kn-IN">Kannada</option>
+        <option value="mr-IN">Marathi</option>
+        <option value="or-IN">Odia</option>
+        <option value="pa-IN">Punjabi</option>
+        <option value="as-IN">Assamese</option>
+        <option value="ur-IN">Urdu</option>
+    </select>
+
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <!-- Coco SSD model for object detection -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+    <script>
+        const video = document.getElementById('webcam');
+        const feedback = document.getElementById('feedback');
+        const canvas = document.getElementById('overlay');
+        const ctx = canvas.getContext('2d');
+        const languageSelector = document.getElementById('language');
+        
+        let model;
+
+        // Known object height and focal length (modify as necessary)
+        const KNOWN_OBJECT_HEIGHT = 24; // Height of object in cm
+        const FOCAL_LENGTH = 615; // Approximate focal length in pixels
+
+        // Load the pre-trained model
+        cocoSsd.load().then(loadedModel => {
+            model = loadedModel;
+            feedback.textContent = "Model loaded!";
+            startWebcam();
+        });
+
+        // Start the webcam feed
+        async function startWebcam() {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            video.srcObject = stream;
+
+            video.onloadedmetadata = () => {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                detectObjects();
+            };
+        }
+
+        // Perform object detection and draw results
+        async function detectObjects() {
+            const predictions = await model.detect(video);
+
+            // Clear the canvas before drawing
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            predictions.forEach(prediction => {
+                const [x, y, width, height] = prediction.bbox;
+                const text = `${prediction.class}: ${Math.round(prediction.score * 100)}%`;
+
+                // Draw a rectangle around the object
+                ctx.strokeStyle = "green";
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x, y, width, height);
+
+                // Calculate distance
+                const distance = calculateDistance(height);
+                ctx.fillStyle = "green";
+                ctx.font = "18px Arial";
+                ctx.fillText(text, x, y > 10 ? y - 5 : 10);
+                ctx.fillText(`Distance: ${distance.toFixed(2)} cm`, x, y + height + 15); // Display distance below the box
+                
+                // Speak the object's name and distance in the selected language
+                speakObjectAndDistance(prediction.class, distance);
+            });
+
+            // Keep detecting objects in the next frame
+            requestAnimationFrame(detectObjects);
+        }
+
+        // Calculate distance based on the bounding box height
+        function calculateDistance(perceivedHeight) {
+            return (KNOWN_OBJECT_HEIGHT * FOCAL_LENGTH) / perceivedHeight;
+        }
+
+        // Speak the object's name and distance using the Web Speech API
+        function speakObjectAndDistance(objectName, distance) {
+            const selectedLanguage = languageSelector.value;
+            const msg = new SpeechSynthesisUtterance(`Detected ${objectName}, distance is ${distance.toFixed(2)} centimeters.`);
+            msg.lang = selectedLanguage; // Set the language for the speech synthesis
+
+            // Check for available voices and select the one that matches the selected language
+            window.speechSynthesis.onvoiceschanged = function() {
+                const voices = window.speechSynthesis.getVoices();
+                const selectedVoice = voices.find(voice => voice.lang === selectedLanguage);
+                if (selectedVoice) {
+                    msg.voice = selectedVoice; // Use the selected voice
+                }
+                window.speechSynthesis.speak(msg);
+            };
+        }
+    </script>
+</body>
+</html>
